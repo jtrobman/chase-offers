@@ -1,30 +1,35 @@
 async function addNextOffer() {
   const WAIT_TIME_MS = 1000
   var offerButtons = document.getElementsByClassName('sixersoffers__cta')
-
-  setTimeout(() => {
-    if (offerButtons[0].innerText.toLowerCase() == 'add to card') {
-      console.log('clicking ' + offerButtons[0].getAttribute('aria-label'))
-      offerButtons[0].click()
+  for (let i = 0; i < offerButtons.length; i++) {
+    if (offerButtons[i].getAttribute('aria-label').toLowerCase().includes('add to card')) {
+      console.log('clicking ' + offerButtons[i].getAttribute('aria-label'))
+      offerButtons[i].click()
       setTimeout(() => {
-        document.getElementById('flyoutClose').click();
-        return true;
+        document.getElementById('flyoutClose').click()
+        // return true
       }, WAIT_TIME_MS)
+      return true
     }
-    else {
-      console.log('all deals have been added!')
-      return false;
-    }
-  }, WAIT_TIME_MS)
+  }
+
+  console.log('all deals have been added!')
+  return false
 }
 
 function main() {
-  const WAIT_TIME_MS = 3000;
-  for (let i = 0; i < 100; ++i) {
+  const WAIT_TIME_MS = 3000
+  var offerButtons = document.getElementsByClassName('sixersoffers__cta')
+  for (let i = 0; i < offerButtons.length; ++i) {
     setTimeout(() => {
-      addNextOffer()
+      if (!addNextOffer()) {
+        return true
+      }
+      else {
+        return false
+      }
     }, i * WAIT_TIME_MS)
   }
 }
 
-main();
+main()
