@@ -66,6 +66,13 @@ async function addNextOffer() {
 async function main() {
   const WAIT_TIME_MS = 1000;
 
+  // Navigate to the initial URL
+  const initialUrl = "https://secure.chase.com/web/auth/dashboard#/dashboard/merchantOffers/offer-hub";
+  window.location.href = initialUrl;
+
+  // Wait for the page to load
+  await waitForElement('mds-icon[type="ico_add_circle"][data-cy="commerce-tile-button"]', WAIT_TIME_MS);
+
   while (true) {
     const result = await addNextOffer();
     if (!result) break;
