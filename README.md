@@ -1,5 +1,5 @@
 # Chase Offers Automation
-Automatically add all Chase credit card offers from the website without having to click one-by-one.
+Automatically add all Chase credit/debit card offers from the website without having to click one-by-one.
 
 ## Usage
 1. **Login to the Chase Banking Website**:
@@ -9,7 +9,7 @@ Automatically add all Chase credit card offers from the website without having t
 2. **Open the JS Console in Your Browser**:
    - Open your web browser (e.g., Chrome, Firefox).
    - Press `F12` on your keyboard to open the Developer Tools.
-   - Click on the `Console` tab to open the JS Console.
+   - Click on the `Console` tab to open the JS Console, if not already open.
 
 3. **Open the Script File**:
    - Open the `index.js` file with a program like Notepad to access the script code.
