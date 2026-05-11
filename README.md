@@ -2,20 +2,21 @@
 
 Activate Chase credit card offers across all eligible accounts without clicking each offer manually.
 
-Last verified on Chase UI: 2026-03-08
+Last verified on Chase UI: 2026-05-11
 
 ## What This Script Does
 
 - Iterates through each account in the Chase Offers account selector.
 - Opens each account's offers list.
 - Clicks only offers that are not already activated.
-- Returns to the account list and repeats until all accounts are processed.
+- Switches accounts through the Chase Offers account selector and repeats until all accounts are processed.
 - Logs progress in the browser console.
+- Waits for the Chase Offers account selector and offer tiles before acting.
 
 ## Requirements
 
 - You are signed in to Chase in a desktop browser.
-- You are on the Chase Offers page where the account dropdown is visible.
+- You are on the live Chase Offers page after it finishes loading. Do not run it from View Source or from the initial HTML loading shell.
 - Browser console access (Chrome, Edge, Firefox, etc.).
 
 ## Quick Start
@@ -30,6 +31,7 @@ Last verified on Chase UI: 2026-03-08
 
 - The script uses short waits between actions to allow page transitions.
 - It skips offers that already show a success/activated indicator.
+- It only clicks Back if Chase opens an offer detail page after the batch of offer clicks.
 - Do not navigate away while it is running.
 
 ## Troubleshooting

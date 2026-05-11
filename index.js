@@ -1,63 +1,126 @@
 async function clickAllOffersAllAccounts() {
-  // Get initial count of accounts
-  let dropdown = document.querySelector('#select-credit-card-account');
-  let options = dropdown.querySelectorAll('mds-select-option');
-  let totalAccounts = options.length;
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-  console.log(`Found ${totalAccounts} accounts. Starting...`);
+  function isVisible(element) {
+    if (!element) return false;
+    if (element.tagName === 'MDS-SELECT-OPTION') return !element.hidden;
 
-  // Loop through each account
-  for (let i = 0; i < totalAccounts; i++) {
-    console.log(`\nProcessing account ${i + 1} of ${totalAccounts}`);
+    const style = window.getComputedStyle(element);
+    return style.display !== 'none' &&
+      style.visibility !== 'hidden' &&
+      style.opacity !== '0' &&
+      element.getClientRects().length > 0;
+  }
 
-    // Re-query dropdown and options each time (important after back button!)
-    dropdown = document.querySelector('#select-credit-card-account');
-    options = dropdown.querySelectorAll('mds-select-option');
+  function getText(element) {
+    return [
+      element?.getAttribute?.('label'),
+      element?.getAttribute?.('aria-label'),
+      element?.innerText,
+      element?.textContent
+    ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+  }
 
-    console.log(`  Switching to: ${options[i].getAttribute('label')}`);
+  function getDropdown() {
+    return document.querySelector('#select-credit-card-account');
+  }
 
-    // Click the dropdown to open it
+  function getAccountOptions(dropdown) {
+    return Array.from(dropdown.querySelectorAll('mds-select-option'))
+      .filter(option => option.getAttribute('inactive') !== 'true');
+  }
+
+  async function waitForAccountSelector() {
+    for (let i = 0; i < 40; i++) {
+      const dropdown = getDropdown();
+      if (dropdown && getAccountOptions(dropdown).length) return dropdown;
+      await sleep(250);
+    }
+
+    throw new Error('Could not find #select-credit-card-account with mds-select-option children.');
+  }
+
+  function getOfferButtons() {
+    return Array.from(document.querySelectorAll('[role="button"][data-testid="commerce-tile"]'))
+      .filter(isVisible);
+  }
+
+  function isActivatedOffer(button) {
+    return Boolean(button.querySelector('[data-testid="offer-tile-alert-container-success"]')) ||
+      /\b(added to card|activated|already added|offer added|enrolled)\b/i.test(getText(button));
+  }
+
+  async function waitForOfferButtons() {
+    for (let i = 0; i < 40; i++) {
+      const buttons = getOfferButtons();
+      if (buttons.length) return buttons;
+      await sleep(250);
+    }
+
+    throw new Error('Could not find offer tiles with [role="button"][data-testid="commerce-tile"].');
+  }
+
+  function findBackButton() {
+    const secondaryBack = document.querySelector('#mds-secondary-back-navbar')
+      ?.shadowRoot?.querySelector('.navigation-bar__back-button');
+    if (secondaryBack) return secondaryBack;
+
+    return Array.from(document.querySelectorAll('button, a, [role="button"]'))
+      .filter(isVisible)
+      .find(element => /^back$/i.test(getText(element)));
+  }
+
+  async function returnToOffersListIfNeeded() {
+    if (getDropdown()) return;
+
+    const backButton = findBackButton();
+    if (!backButton) {
+      throw new Error('Clicked offers, but could not find the offer detail Back button.');
+    }
+
+    backButton.click();
+    console.log('  Clicked back button');
+    await waitForAccountSelector();
+    await sleep(1000);
+  }
+
+  let dropdown = await waitForAccountSelector();
+  let accountLabels = getAccountOptions(dropdown).map(getText);
+
+  console.log(`Found ${accountLabels.length} accounts. Starting...`);
+
+  for (let i = 0; i < accountLabels.length; i++) {
+    console.log(`\nProcessing account ${i + 1} of ${accountLabels.length}`);
+
+    dropdown = await waitForAccountSelector();
+    const options = getAccountOptions(dropdown);
+    const option = options.find(item => getText(item) === accountLabels[i]) || options[i];
+
+    if (!option) {
+      console.warn(`  Could not find account ${i + 1}; skipping`);
+      continue;
+    }
+
+    console.log(`  Switching to: ${getText(option)}`);
+
     dropdown.click();
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await sleep(500);
+    option.click();
+    await sleep(2000);
 
-    // Click the specific option
-    options[i].click();
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    // Get all offer buttons
-    let allButtons = document.querySelectorAll('div[role="button"][data-testid="commerce-tile"]');
-
-    // Filter out already-applied offers (ones with checkmark)
-    let unappliedButtons = Array.from(allButtons).filter(button => {
-      let successIndicator = button.querySelector('[data-testid="offer-tile-alert-container-success"]');
-      return successIndicator === null;
-    });
+    const allButtons = await waitForOfferButtons();
+    const unappliedButtons = allButtons.filter(button => !isActivatedOffer(button));
 
     console.log(`  Found ${allButtons.length} total offers, ${unappliedButtons.length} unapplied`);
 
-    // Click only unapplied offers
-    unappliedButtons.forEach(button => {
-      button.click();
-    });
+    // Preserve the original behavior: fire all clicks in the same tick, then return if Chase opens a detail page.
+    unappliedButtons.forEach(button => button.click());
 
-    // Wait 1 second
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    // Click back button to return to dropdown screen
-    let backButton = document.querySelector('#mds-secondary-back-navbar')
-      ?.shadowRoot?.querySelector('.navigation-bar__back-button');
-
-    if (backButton) {
-      backButton.click();
-      console.log('  Clicked back button');
-    }
-
-    // Wait for page to return and dropdown to be ready
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    await sleep(1000);
+    await returnToOffersListIfNeeded();
   }
 
-  console.log(`\nDone! Processed all ${totalAccounts} accounts.`);
+  console.log(`\nDone! Processed all ${accountLabels.length} accounts.`);
 }
 
-// Run it
 clickAllOffersAllAccounts();
