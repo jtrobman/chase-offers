@@ -18,7 +18,9 @@ async function clickAllOffersAllAccounts() {
       element?.getAttribute?.('aria-label'),
       element?.innerText,
       element?.textContent
-    ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+    ].filter(Boolean)
+      .map(text => text.replace(/\s+/g, ' ').trim())
+      .find(Boolean) || '';
   }
 
   function getDropdown() {
@@ -26,18 +28,36 @@ async function clickAllOffersAllAccounts() {
   }
 
   function getAccountOptions(dropdown) {
-    return Array.from(dropdown.querySelectorAll('mds-select-option'))
+    const legacyOptions = Array.from(dropdown.querySelectorAll('mds-select-option'));
+    const currentOptions = Array.from(document.querySelectorAll('[role="option"][data-testid^="user-account-option-"]'));
+
+    return [...legacyOptions, ...currentOptions]
       .filter(option => option.getAttribute('inactive') !== 'true');
   }
 
   async function waitForAccountSelector() {
     for (let i = 0; i < 40; i++) {
       const dropdown = getDropdown();
-      if (dropdown && getAccountOptions(dropdown).length) return dropdown;
+      if (dropdown && isVisible(dropdown)) return dropdown;
       await sleep(250);
     }
 
-    throw new Error('Could not find #select-credit-card-account with mds-select-option children.');
+    throw new Error('Could not find visible #select-credit-card-account.');
+  }
+
+  async function openAccountSelector(dropdown) {
+    let options = getAccountOptions(dropdown).filter(isVisible);
+    if (options.length) return options;
+
+    dropdown.click();
+
+    for (let i = 0; i < 20; i++) {
+      options = getAccountOptions(dropdown).filter(isVisible);
+      if (options.length) return options;
+      await sleep(250);
+    }
+
+    throw new Error('Could not find visible account options after opening #select-credit-card-account.');
   }
 
   function getOfferButtons() {
@@ -50,11 +70,39 @@ async function clickAllOffersAllAccounts() {
       /\b(added to card|activated|already added|offer added|enrolled)\b/i.test(getText(button));
   }
 
+  function getOffersErrorBanner() {
+    return Array.from(document.querySelectorAll('mds-banner[data-testid="error-banner"]'))
+      .filter(isVisible)
+      .find(banner => /trouble with chase offers/i.test(banner.getAttribute('banner-title') || ''));
+  }
+
+  function clickTryAgain() {
+    const banner = getOffersErrorBanner();
+    const retryLink = banner?.shadowRoot
+      ?.querySelector('mds-link[text="Try again"]')
+      ?.shadowRoot
+      ?.querySelector('a');
+
+    if (!retryLink) return false;
+
+    retryLink.click();
+    return true;
+  }
+
   async function waitForOfferButtons() {
-    for (let i = 0; i < 40; i++) {
-      const buttons = getOfferButtons();
-      if (buttons.length) return buttons;
-      await sleep(250);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      for (let i = 0; i < 40; i++) {
+        const buttons = getOfferButtons();
+        if (buttons.length) return buttons;
+
+        if (getOffersErrorBanner()) break;
+        await sleep(250);
+      }
+
+      if (!clickTryAgain()) break;
+
+      console.log('  Chase Offers had trouble loading; clicked Try again');
+      await sleep(3000);
     }
 
     throw new Error('Could not find offer tiles with [role="button"][data-testid="commerce-tile"].');
@@ -71,7 +119,7 @@ async function clickAllOffersAllAccounts() {
   }
 
   async function returnToOffersListIfNeeded() {
-    if (getDropdown()) return;
+    if (isVisible(getDropdown())) return;
 
     const backButton = findBackButton();
     if (!backButton) {
@@ -85,7 +133,7 @@ async function clickAllOffersAllAccounts() {
   }
 
   let dropdown = await waitForAccountSelector();
-  let accountLabels = getAccountOptions(dropdown).map(getText);
+  let accountLabels = (await openAccountSelector(dropdown)).map(getText);
 
   console.log(`Found ${accountLabels.length} accounts. Starting...`);
 
@@ -93,7 +141,7 @@ async function clickAllOffersAllAccounts() {
     console.log(`\nProcessing account ${i + 1} of ${accountLabels.length}`);
 
     dropdown = await waitForAccountSelector();
-    const options = getAccountOptions(dropdown);
+    const options = await openAccountSelector(dropdown);
     const option = options.find(item => getText(item) === accountLabels[i]) || options[i];
 
     if (!option) {
@@ -103,8 +151,6 @@ async function clickAllOffersAllAccounts() {
 
     console.log(`  Switching to: ${getText(option)}`);
 
-    dropdown.click();
-    await sleep(500);
     option.click();
     await sleep(2000);
 
