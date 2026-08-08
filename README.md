@@ -2,8 +2,6 @@
 
 Activate Chase credit card offers across all eligible accounts without clicking each offer manually.
 
-Last verified on Chase UI: 2026-06-28
-
 ## What This Script Does
 
 - Iterates through each account in the Chase Offers account selector.
