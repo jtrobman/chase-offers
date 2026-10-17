@@ -1,298 +1,94 @@
 async function clickAllOffersAllAccounts() {
-  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-
-  function isVisible(element) {
-    if (!element) return false;
-    if (element.tagName === 'MDS-SELECT-OPTION') return !element.hidden;
-
-    const style = window.getComputedStyle(element);
-    return style.display !== 'none' &&
-      style.visibility !== 'hidden' &&
-      style.opacity !== '0' &&
-      element.getClientRects().length > 0;
-  }
-
-  function getText(element) {
-    return [
-      element?.getAttribute?.('label'),
-      element?.getAttribute?.('aria-label'),
-      element?.innerText,
-      element?.textContent
-    ].filter(Boolean)
-      .map(text => text.replace(/\s+/g, ' ').trim())
-      .find(Boolean) || '';
-  }
-
-  // MDS components render into open shadow roots. Walking the tree is the
-  // expensive part, so it happens once per lookup and every selector is then run
-  // against the collected roots.
-  function collectShadowRoots(root = document, depth = 0, found = []) {
-    if (depth >= 4) return found;
-
-    for (const host of root.querySelectorAll('*')) {
-      if (host.shadowRoot) {
-        found.push(host.shadowRoot);
-        collectShadowRoots(host.shadowRoot, depth + 1, found);
-      }
-    }
-
-    return found;
-  }
-
-  // Returns matches for the FIRST selector that yields any, so overlapping
-  // fallbacks can never surface the same element twice. The shadow-DOM pass
-  // applies the SAME scoped selectors across shadow boundaries rather than
-  // widening them, and only runs when the light DOM turns up nothing.
-  // A prefix/substring fallback can match both a tile and a child of that tile.
-  // Keeping only the outermost match avoids clicking the same offer twice.
-  function outermost(elements) {
-    return elements.filter(element =>
-      !elements.some(other => other !== element && other.contains(element)));
-  }
-
-  function findAllVisible(selectors) {
-    for (const selector of selectors) {
-      const matches = Array.from(document.querySelectorAll(selector)).filter(isVisible);
-      if (matches.length) return outermost(matches);
-    }
-
-    const shadowRoots = collectShadowRoots();
-
-    for (const selector of selectors) {
-      const matches = [...new Set(shadowRoots.flatMap(root =>
-        Array.from(root.querySelectorAll(selector))))].filter(isVisible);
-      if (matches.length) return outermost(matches);
-    }
-
-    return [];
-  }
-
-  // Chase renames these controls periodically; each entry stays scoped to the
-  // account selector itself rather than matching generic comboboxes.
-  const ACCOUNT_SELECTOR_SELECTORS = [
-    '#select-credit-card-account',
-    '[data-testid="select-credit-card-account"]',
-    'mds-select[id^="select-credit-card"]',
-    'mds-select[data-testid^="select-credit-card"]',
-    'mds-select[id*="account"]',
-    'mds-select[data-testid*="account"]',
-    '[role="combobox"][data-testid*="account"]'
-  ];
-
-  const ACCOUNT_OPTION_SELECTORS = [
-    '[role="option"][data-testid^="user-account-option-"]',
-    '[role="option"][data-testid*="account-option"]'
-  ];
-
-  const OFFER_TILE_SELECTORS = [
-    '[role="button"][data-testid="commerce-tile"]',
-    '[data-testid="commerce-tile"]',
-    '[data-testid^="commerce-tile"]',
-    '[role="button"][data-testid*="offer-tile"]'
-  ];
-
-  function getDropdown() {
-    return findAllVisible(ACCOUNT_SELECTOR_SELECTORS)[0] || null;
-  }
-
-  // The listbox is often rendered outside the dropdown, linked by aria-controls/owns.
-  function getLinkedListbox(dropdown) {
-    const id = dropdown?.getAttribute('aria-controls') || dropdown?.getAttribute('aria-owns');
-    return id ? document.getElementById(id) : null;
-  }
-
-  function getAccountOptions(dropdown) {
-    // Scoped to the dropdown (and its shadow root / linked listbox), so a bare
-    // `mds-select-option` here can't pick up options from an unrelated select.
-    const scopes = [dropdown, dropdown?.shadowRoot, getLinkedListbox(dropdown)].filter(Boolean);
-    const scopedOptions = scopes.flatMap(scope =>
-      Array.from(scope.querySelectorAll('mds-select-option, [role="option"]')));
-
-    return [...new Set([...scopedOptions, ...findAllVisible(ACCOUNT_OPTION_SELECTORS)])]
-      .filter(option => option.getAttribute('inactive') !== 'true');
-  }
-
-  async function waitForAccountSelector() {
-    for (let i = 0; i < 40; i++) {
-      const dropdown = getDropdown();
-      if (dropdown) return dropdown;
-      await sleep(250);
-    }
-
-    return null;
-  }
-
-  async function openAccountSelector(dropdown) {
-    let options = getAccountOptions(dropdown).filter(isVisible);
-    if (options.length) return options;
-
-    if (!dropdown) return [];
-
-    dropdown.click();
-
-    for (let i = 0; i < 20; i++) {
-      options = getAccountOptions(dropdown).filter(isVisible);
-      if (options.length) return options;
-      await sleep(250);
-    }
-
-    return [];
-  }
-
-  function getOfferButtons() {
-    return findAllVisible(OFFER_TILE_SELECTORS);
-  }
-
-  function isActivatedOffer(button) {
-    return Boolean(button.querySelector('[data-testid="offer-tile-alert-container-success"]')) ||
-      /\b(added to card|activated|already added|offer added|enrolled)\b/i.test(getText(button));
-  }
-
-  function getOffersErrorBanner() {
-    return Array.from(document.querySelectorAll('mds-banner[data-testid="error-banner"]'))
-      .filter(isVisible)
-      .find(banner => /trouble with chase offers/i.test(banner.getAttribute('banner-title') || ''));
-  }
-
-  function clickTryAgain() {
-    const banner = getOffersErrorBanner();
-    const retryLink = banner?.shadowRoot
-      ?.querySelector('mds-link[text="Try again"]')
-      ?.shadowRoot
-      ?.querySelector('a');
-
-    if (!retryLink) return false;
-
-    retryLink.click();
-    return true;
-  }
-
-  async function waitForOfferButtons() {
-    for (let attempt = 0; attempt < 3; attempt++) {
-      for (let i = 0; i < 40; i++) {
-        const buttons = getOfferButtons();
-        if (buttons.length) return buttons;
-
-        if (getOffersErrorBanner()) break;
-        await sleep(250);
-      }
-
-      if (!clickTryAgain()) break;
-
-      console.log('  Chase Offers had trouble loading; clicked Try again');
-      await sleep(3000);
-    }
-
-    // An account with genuinely zero offers is normal, so this returns empty
-    // instead of throwing and aborting the remaining accounts. If EVERY account
-    // comes back empty, the run summary flags the tile selector as suspect.
-    return [];
-  }
-
-  function findBackButton() {
-    const secondaryBack = document.querySelector('#mds-secondary-back-navbar')
-      ?.shadowRoot?.querySelector('.navigation-bar__back-button');
-    if (secondaryBack) return secondaryBack;
-
-    return Array.from(document.querySelectorAll('button, a, [role="button"]'))
-      .filter(isVisible)
-      .find(element => /^back$/i.test(getText(element)));
-  }
-
-  async function returnToOffersListIfNeeded() {
-    if (getDropdown() || getOfferButtons().length) return;
-
-    const backButton = findBackButton();
-    if (!backButton) {
-      throw new Error('Clicked offers, but could not find the offer detail Back button.');
-    }
-
-    backButton.click();
-    console.log('  Clicked back button');
-    await waitForAccountSelector();
-    await sleep(1000);
-  }
-
-  async function clickUnappliedOffers() {
-    const allButtons = await waitForOfferButtons();
-
-    if (!allButtons.length) {
-      console.warn('  No offer tiles found for this account');
-      return false;
-    }
-
-    const unappliedButtons = allButtons.filter(button => !isActivatedOffer(button));
-
-    console.log(`  Found ${allButtons.length} total offers, ${unappliedButtons.length} unapplied`);
-
-    // Preserve the original behavior: fire all clicks in the same tick, then return if Chase opens a detail page.
-    unappliedButtons.forEach(button => button.click());
-
-    await sleep(1000);
-    await returnToOffersListIfNeeded();
-    return true;
-  }
-
-  let dropdown = await waitForAccountSelector();
-  let accountLabels = (await openAccountSelector(dropdown)).map(getText);
-
-  if (!accountLabels.length) {
-    console.warn('Could not find the Chase Offers account selector or its options; the page may have changed.');
-    console.warn('Falling back to the account that is currently selected only.');
-
-    await clickUnappliedOffers();
-
-    console.log('\nDone! Processed the current account only.');
+  if (window.chaseOffersRunning) {
+    console.warn('Chase Offers is already running.');
     return;
   }
 
-  console.log(`Found ${accountLabels.length} accounts. Starting...`);
+  window.chaseOffersRunning = true;
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const accountSelector = '[data-testid="account-selector-trigger"]';
+  const accountOptions = '[data-testid="account-selector-sheet"] [role="option"]';
+  const offerTiles = '[role="button"][data-testid="commerce-tile"]';
 
-  let accountsWithTiles = 0;
-  const skipped = [];
+  async function waitFor(selector) {
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const element = document.querySelector(selector);
+      if (element) return element;
+      await sleep(250);
+    }
+    return null;
+  }
 
-  for (let i = 0; i < accountLabels.length; i++) {
-    console.log(`\nProcessing account ${i + 1} of ${accountLabels.length}`);
+  async function openAccounts() {
+    const dropdown = await waitFor(accountSelector);
+    if (!dropdown) throw new Error('Could not find the Chase Offers account picker.');
 
-    // One bad account must not abort the accounts after it.
-    try {
-      dropdown = await waitForAccountSelector();
-      const options = await openAccountSelector(dropdown);
-      const option = options.find(item => getText(item) === accountLabels[i]) || options[i];
+    if (dropdown.getAttribute('aria-expanded') !== 'true') dropdown.click();
+    if (!await waitFor(accountOptions)) {
+      throw new Error('The account picker opened, but no accounts appeared.');
+    }
 
-      if (!option) {
-        console.warn(`  Could not find account ${i + 1}; skipping`);
-        skipped.push(accountLabels[i]);
-        continue;
+    return document.querySelectorAll(accountOptions);
+  }
+
+  async function loadOffers() {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (await waitFor(offerTiles)) return document.querySelectorAll(offerTiles);
+
+      const retry = document.querySelector('mds-banner[data-testid="error-banner"]')
+        ?.shadowRoot?.querySelector('mds-link[text="Try again"]')
+        ?.shadowRoot?.querySelector('a');
+      if (!retry) break;
+
+      console.log('Chase Offers had trouble loading; clicking Try again.');
+      retry.click();
+      await sleep(3000);
+    }
+    return [];
+  }
+
+  try {
+    // Reopen the picker after each account and take the next entry in order.
+    for (let index = 0; ; index++) {
+      const accounts = await openAccounts();
+      const account = accounts[index];
+      if (!account) {
+        document.querySelector('[data-testid="account-selector-sheet"] button[aria-label="Select here to close."]')?.click();
+        console.log('Done! Reached the end of the account picker.');
+        break;
       }
 
-      console.log(`  Switching to: ${getText(option)}`);
-
-      option.click();
+      if (account.getAttribute('aria-disabled') === 'true') continue;
+      console.log(`Switching to: ${account.textContent.trim()}`);
+      account.click();
       await sleep(2000);
 
-      // Only checked when Chase actually exposes the state, so this can't false-alarm.
-      if (option.getAttribute('aria-selected') === 'false') {
-        console.warn('  Account still reports aria-selected="false"; the switch may not have applied');
+      const offers = await loadOffers();
+      const unapplied = Array.from(offers).filter(offer =>
+        !offer.querySelector('[data-testid="offer-tile-alert-container-success"]') &&
+        !/\bSuccess Added$/i.test(offer.getAttribute('aria-label') || ''));
+
+      if (!offers.length) console.warn('No offer tiles found for this account.');
+      console.log(`Found ${offers.length} offers, ${unapplied.length} unapplied.`);
+
+      // Click the whole batch before handling any offer detail page.
+      unapplied.forEach(offer => offer.click());
+      await sleep(1000);
+
+      if (!document.querySelector(accountSelector) && !document.querySelector(offerTiles)) {
+        const back = document.querySelector('#mds-secondary-back-navbar')
+          ?.shadowRoot?.querySelector('.navigation-bar__back-button');
+        if (!back) throw new Error('Could not find the offer detail Back button.');
+        back.click();
+        if (!await waitFor(accountSelector)) {
+          throw new Error('Could not return to the offers list.');
+        }
       }
-
-      if (await clickUnappliedOffers()) accountsWithTiles++;
-    } catch (error) {
-      console.warn(`  Skipping account ${i + 1}: ${error.message}`);
-      skipped.push(accountLabels[i]);
     }
-  }
-
-  console.log(`\nDone! Processed all ${accountLabels.length} accounts.`);
-
-  if (skipped.length) {
-    console.warn(`Skipped ${skipped.length} account(s): ${skipped.join(', ')}`);
-  }
-
-  // Zero tiles on one account is normal; zero on every account means the tile
-  // selector probably changed, which would otherwise look like a clean run.
-  if (!accountsWithTiles) {
-    console.warn('No offer tiles were found on ANY account - the offer tile selector has likely changed.');
+  } catch (error) {
+    console.error(`Stopped: ${error.message}`);
+  } finally {
+    delete window.chaseOffersRunning;
   }
 }
 
